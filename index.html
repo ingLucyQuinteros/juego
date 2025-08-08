@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>HackRace — Phaser3 Mejorado</title>
+<style>
+  html,body{height:100%;margin:0;background:#071021;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;color:#dfe9f3}
+  #gameContainer{display:flex;justify-content:center;padding:8px}
+  #game{width:900px;height:600px;border-radius:8px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.6)}
+  #ui{width:900px;margin:8px auto;display:flex;gap:12px}
+  #terminal{flex:1;background:#051019;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.04)}
+  #terminal pre{background:#01050a;padding:10px;border-radius:6px;font-family:monospace;min-height:120px;max-height:220px;overflow:auto;color:#9be3ff}
+  #cmdRow{display:flex;gap:8px;margin-top:8px}
+  #cmd{flex:1;background:#02121a;border:1px solid rgba(255,255,255,0.04);padding:8px;border-radius:6px;color:#9be3ff;font-family:monospace}
+  #send{background:#0ea5a3;border:none;padding:8px 12px;border-radius:6px;color:#012020;font-weight:700}
+  #info{width:300px}
+  .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.04)}
+  .small{background:#1f2937;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer}
+  footer{max-width:900px;margin:8px auto;color:#9fb8c6;font-size:13px;text-align:center}
+  code{background:rgba(255,255,255,0.03);padding:2px 4px;border-radius:3px}
+</style>
+</head>
+<body>
+  <div id="gameContainer"><div id="game"></div></div>
+  <div id="ui">
+    <div id="terminal">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>Terminal — usa <code>move &lt;Ciudad&gt;</code>, <code>connect &lt;Ciudad&gt;</code>, <code>open &lt;code&gt;</code></div>
+        <div id="turnLabel">Turno: <strong>P1</strong></div>
+      </div>
+      <pre id="log">Iniciando HackRace... (pulsa T para enfocar la terminal)</pre>
+      <div id="cmdRow"><input id="cmd" placeholder="Ej. move Santiago" autocomplete="off" /><button id="send">Enviar</button></div>
+    </div>
+
+    <div id="info">
+      <div class="card">
+        <h3 style="margin-top:0">Jugadores</h3>
+        <p id="p1info">P1 - Pos: <span id="p1pos">-</span> | Abrió: <span id="p1opened">0</span></p>
+        <p id="p2info">P2 - Pos: <span id="p2pos">-</span> | Abrió: <span id="p2opened">0</span></p>
+        <hr style="border-color:rgba(255,255,255,0.03)"/>
+        <h4 style="margin:6px 0">Rutas disponibles</h4>
+        <p id="routes">--</p>
+        <div style="margin-top:10px;display:flex;gap:8px">
+          <button class="small" id="resetBtn">Reiniciar</button>
+          <button class="small" id="randomizeBtn">Aleatorizar gates</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <footer>Phaser 3 — Prototipo mejorado con huellas y fuegos artificiales</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+<script>
+/* ---------- CONFIG Y ESCENA ---------- */
+
+const config = {
+  type: Phaser.AUTO,
+  parent: 'game',
+  width: 900,
+  height: 600,
+  backgroundColor: '#071021',
+ /* scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+        width: 800,
+        height: 600
+    },*/
+  scene: { preload, create, update }
+};
+const game = new Phaser.Game(config);
+
+let sceneRef;
+let nodes = [];
+let edges = [];
+let traces = []; // huellas permanentes [{a,b,color}]
+let players = {};
+let turn = 'p1';
+let animInProgress = false;
+let victory = false;
+
+/* Preload: intenta cargar mapa, si falla usaremos fondo alternativo */
+function preload(){
+  // intenta cargar mapa local en assets/mapa.png (puedes reemplazar)
+  console.log('Cargando mapa...');
+  this.load.image('map', 'mapa.png');
+}
+
+function create(){
+  sceneRef = this;
+
+  // Comprobar si la textura map está disponible al render
+  if(this.textures.exists('map')){
+    console.log('Mapa cargado correctamente.');
+    this.add.image(450,300,'map').setDisplaySize(900,600).setDepth(0);
+  } else {
+    // fondo de respaldo (gradiente simulado con rects)
+    console.warn('Mapa no encontrado, usando fondo alternativo.');
+    const g = this.add.graphics();
+    g.fillStyle(0x071021,1); g.fillRect(0,0,900,600);
+    for(let i=0;i<18;i++){ g.lineStyle(1,0x083246,0.03); g.strokeLineShape(new Phaser.Geom.Line(0,i*34,900,i*34)); }
+  }
+
+  // Generar textura para partícula sencilla (círculo)
+  const pG = this.make.graphics({x:0,y:0,add:false});
+  pG.fillStyle(0xffffff,1); pG.fillCircle(6,6,6); pG.generateTexture('dot', 12,12);
+  pG.clear();
+
+  // Grafo ampliado (nodos y coordenadas)
+  nodes = [
+    {id:'Lima', x:140, y:360},
+    {id:'Santiago', x:200, y:440},
+    {id:'Mexico', x:80, y:200},
+    {id:'NY', x:300, y:120},
+    {id:'Toronto', x:250, y:80},
+    {id:'London', x:460, y:110},
+    {id:'Paris', x:500, y:140},
+    {id:'Berlin', x:540, y:160},
+    {id:'Cairo', x:600, y:220},
+    {id:'Dubai', x:700, y:240},
+    {id:'Mumbai', x:740, y:330},
+    {id:'Bangkok', x:780, y:360},
+    {id:'Singapore', x:820, y:420},
+    {id:'Tokyo', x:820, y:200},
+    {id:'Sydney', x:860, y:520},
+    {id:'CapeTown', x:480, y:500},
+    {id:'Madrid', x:420, y:170},
+    {id:'Berlin2', x:570, y:190}
+  ];
+
+  // Conexiones: algunas cortas, algunas largas; añadimos múltiples rutas alternativas
+  const connect = (a,b,blocked=false,code=null)=>{
+    const edge = {a,b,blocked,code,dist:distBetween(a,b)};
+    edges.push(edge);
+  };
+  function distBetween(a,b){
+    const A = nodes.find(n=>n.id===a), B = nodes.find(n=>n.id===b);
+    return Math.hypot(A.x-B.x, A.y-B.y);
+  }
+
+  // Base graph (con muchos atajos)
+  connect('Lima','Santiago'); connect('Lima','Mexico');
+  connect('Mexico','NY'); connect('NY','Toronto'); connect('Toronto','London');
+  connect('NY','London'); connect('London','Paris'); connect('Paris','Berlin');
+  connect('Berlin','Berlin2'); connect('Berlin2','Cairo'); connect('Paris','Madrid');
+  connect('Madrid','London'); connect('Cairo','Dubai'); connect('Dubai','Mumbai');
+  connect('Mumbai','Bangkok'); connect('Bangkok','Singapore'); connect('Singapore','Sydney');
+  connect('Bangkok','Tokyo'); connect('Tokyo','Sydney'); connect('CapeTown','Santiago');
+  connect('CapeTown','Lima'); connect('CapeTown','Cairo'); connect('Madrid','CapeTown');
+
+  // Añadimos atajos largos (posibles "engaños" que parecen cortos en hops, pero largos)
+  connect('NY','Madrid'); connect('Mexico','Lima'); connect('Lima','CapeTown');
+  connect('London','Dubai'); connect('Madrid','Dubai');
+
+  // Aleatorizar algunos gates (bloqueos)
+  const codes = ['if','run','git','bash','for','xor','map','push','rpc'];
+  edges.forEach(e=>{
+    if(Math.random() < 0.28){
+      e.blocked = true;
+      e.code = codes[Math.floor(Math.random()*codes.length)];
+    }
+  });
+
+  // Dibujar edges y nodos
+  this.edgeGraphics = this.add.graphics().setDepth(1);
+  this.traceGraphics = this.add.graphics().setDepth(2); // huellas permanentes
+  this.pathGraphics = this.add.graphics().setDepth(6); // animaciones temporales
+  drawEdges();
+
+  // Dibujar nodos
+  nodes.forEach(n=>{
+    n.sprite = this.add.circle(n.x, n.y, 14, 0x082a36).setStrokeStyle(2, 0x9be3ff, 0.9).setDepth(3);
+    n.label = this.add.text(n.x, n.y-30, n.id, {font:'12px Arial', color:'#cfeff6'}).setOrigin(0.5).setDepth(3);
+  });
+
+  // Jugadores y posiciones iniciales
+  players.p1 = {id:'p1', name:'P1', node:'Lima', color:0x3ad6ff, opened:0};
+  players.p2 = {id:'p2', name:'P2', node:'Tokyo', color:0xff7b5c, opened:0};
+  drawPlayers();
+
+  // Meta: elegir un nodo meta (por ejemplo, la posición inicial del rival)
+  const metaNodeId = 'Sydney';
+  const metaNode = nodes.find(n=>n.id===metaNodeId);
+  // mostrar área meta (halo)
+  sceneRef.meta = {id: metaNodeId};
+  sceneRef.add.circle(metaNode.x, metaNode.y, 28, 0xffffff, 0.04).setDepth(1);
+  sceneRef.add.text(metaNode.x, metaNode.y+36, 'META', {font:'12px Arial', color:'#ffd9a3'}).setOrigin(0.5).setDepth(3);
+
+  // Crear emitter factory para fuegos artificiales (se usará al ganar)
+  sceneRef.fireworksParticles = this.add.particles('dot');
+
+  // UI handlers
+  document.getElementById('send').addEventListener('click', onCommand);
+  document.getElementById('cmd').addEventListener('keydown', e=>{ if(e.key==='Enter') onCommand(); });
+  document.getElementById('resetBtn').addEventListener('click', resetGame);
+  document.getElementById('randomizeBtn').addEventListener('click', ()=>{ randomizeGates(); drawEdges(); log('Gates aleatorizados'); });
+
+  // focus shortcut
+  window.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='t') document.getElementById('cmd').focus(); });
+
+  updateRoutesUI();
+  log('Prototipo listo. Turno: P1');
+}
+
+/* Update: no heavy loops */
+function update(){}
+
+/* ---------- FUNCIONES PRINCIPALES ---------- */
+
+function drawEdges(){
+  const g = sceneRef.edgeGraphics; g.clear();
+  // limpiar textos de locks antiguos
+  sceneRef.children.list.filter(c=>c._isLockLabel).forEach(c=>c.destroy());
+
+  edges.forEach(e=>{
+    const A = nodes.find(n=>n.id===e.a), B = nodes.find(n=>n.id===e.b);
+    const color = e.blocked ? 0xffbf40 : 0x3ad6ff;
+    const alpha = e.blocked ? 0.22 : 0.42;
+    g.lineStyle(4, color, alpha);
+    g.beginPath(); g.moveTo(A.x, A.y); g.lineTo(B.x,B.y); g.strokePath();
+    if(e.blocked){
+      const mx=(A.x+B.x)/2, my=(A.y+B.y)/2;
+      const txt = sceneRef.add.text(mx, my, '🔒 '+e.code, {font:'12px Arial', color:'#ffd9a3'}).setOrigin(0.5).setDepth(5);
+      txt._isLockLabel = true;
+    }
+  });
+
+  // volver a dibujar huellas
+  redrawTraces();
+}
+
+function redrawTraces(){
+  sceneRef.traceGraphics.clear();
+  traces.forEach(t=>{
+    const A = nodes.find(n=>n.id===t.a), B = nodes.find(n=>n.id===t.b);
+    sceneRef.traceGraphics.lineStyle(6, t.color, 0.9);
+    sceneRef.traceGraphics.beginPath(); sceneRef.traceGraphics.moveTo(A.x,A.y); sceneRef.traceGraphics.lineTo(B.x,B.y); sceneRef.traceGraphics.strokePath();
+    sceneRef.traceGraphics.lineStyle(2, 0xffffff, 0.12);
+    sceneRef.traceGraphics.beginPath(); sceneRef.traceGraphics.moveTo(A.x,A.y); sceneRef.traceGraphics.lineTo(B.x,B.y); sceneRef.traceGraphics.strokePath();
+  });
+}
+
+function drawPlayers(){
+  if(sceneRef.p1Sprite) sceneRef.p1Sprite.destroy();
+  if(sceneRef.p2Sprite) sceneRef.p2Sprite.destroy();
+  const n1 = nodes.find(n=>n.id===players.p1.node), n2 = nodes.find(n=>n.id===players.p2.node);
+  sceneRef.p1Sprite = sceneRef.add.circle(n1.x, n1.y, 10, players.p1.color).setDepth(7).setStrokeStyle(2,0x002b36,1);
+  sceneRef.p2Sprite = sceneRef.add.circle(n2.x, n2.y, 10, players.p2.color).setDepth(7).setStrokeStyle(2,0x2b0200,1);
+  document.getElementById('p1pos').textContent = players.p1.node;
+  document.getElementById('p2pos').textContent = players.p2.node;
+  document.getElementById('p1opened').textContent = players.p1.opened;
+  document.getElementById('p2opened').textContent = players.p2.opened;
+}
+
+function findNode(id){ return nodes.find(n=>n.id===id); }
+function findEdgesFrom(id){ return edges.filter(e=> e.a===id || e.b===id).map(e=>({other: e.a===id? e.b: e.a, edge:e})); }
+
+function updateRoutesUI(){
+  const current = turn === 'p1' ? players.p1 : players.p2;
+  document.getElementById('turnLabel').innerHTML = `Turno: <strong>${turn.toUpperCase()}</strong>`;
+  const routes = findEdgesFrom(current.node);
+  const out = routes.map(r=>`${r.other}${r.edge.blocked? ' (GATE:'+r.edge.code+')':''}`).join('  |  ');
+  document.getElementById('routes').textContent = out || '--';
+  log(`${current.name} desde ${current.node}. Rutas: ${out}`);
+}
+
+/* Comandos: move/connect/open */
+function onCommand(){
+  if(animInProgress || victory) return log('Operación no permitida ahora.');
+  const raw = document.getElementById('cmd').value.trim();
+  if(!raw) return;
+  document.getElementById('cmd').value = '';
+  const parts = raw.split(/\s+/);
+  const verb = parts[0].toLowerCase();
+  const arg = parts.slice(1).join(' ');
+  const current = turn==='p1' ? players.p1 : players.p2;
+
+  if(verb === 'move' || verb === 'connect'){
+    if(!arg) return log('Indica destino: move <Ciudad>');
+    const target = arg;
+    const possible = findEdgesFrom(current.node).map(r=>r.other);
+    if(!possible.includes(target)) return log('Destino no disponible desde tu nodo actual.');
+    const edge = edges.find(e=> (e.a===current.node && e.b===target) || (e.b===current.node && e.a===target));
+    if(edge.blocked){
+      // requiere abrir
+      log(`Ruta bloqueada (gate ${edge.code}). Escribe: open ${edge.code}`);
+      current.awaitingGate = edge;
+      return;
+    }
+    // mover y dejar huella permanente (traza)
+    animateMove(current, target, ()=>{
+      // guardar traza (marca permanente)
+      traces.push({a: current.prevNode || current.node, b: target, color: current.color || (current===players.p1?0x3ad6ff:0xff7b5c)});
+      redrawTraces();
+      current.prevNode = target;
+      drawPlayers();
+      checkMeta(current, target);
+      // cambiar turno si no hay victoria
+      if(!victory){ turn = (turn==='p1')? 'p2':'p1'; updateRoutesUI(); }
+    });
+  } else if(verb === 'open'){
+    const code = arg;
+    const curr = turn==='p1' ? players.p1 : players.p2;
+    if(!curr.awaitingGate) return log('No estás intentando abrir ninguna puerta.');
+    if(curr.awaitingGate.code === code){
+      curr.awaitingGate.blocked = false;
+      curr.opened = (curr.opened||0)+1;
+      log(`${curr.name} abrió la puerta ${code} ✅`);
+      // añadir huella ligera visual en el edge abierto (opcional)
+      traces.push({a: curr.awaitingGate.a, b: curr.awaitingGate.b, color: 0x9be3ff});
+      redrawTraces(); drawEdges(); drawPlayers();
+      delete curr.awaitingGate;
+      // no cambies turno automáticamente; jugador puede mover ahora
+      updateRoutesUI();
+    } else {
+      log('Código incorrecto — pierdes el turno');
+      delete curr.awaitingGate;
+      // perder turno
+      turn = (turn==='p1')? 'p2':'p1';
+      updateRoutesUI();
+    }
+  } else {
+    log('Comando desconocido. Usa: move <Ciudad>, connect <Ciudad>, open <code>');
+  }
+}
+
+/* Animación de movimiento: línea neon; luego actualiza posición */
+function animateMove(player, target, onComplete){
+  animInProgress = true;
+  const fromNode = findNode(player.node);
+  const toNode = findNode(target);
+  const pg = sceneRef.pathGraphics; pg.clear();
+
+  // línea animada con tween
+  const color = player===players.p1 ? 0x3ad6ff : 0xff7b5c;
+  sceneRef.tweens.addCounter({
+    from:0, to:1, duration:900, ease:'Cubic.easeInOut',
+    onUpdate: twn=>{
+      const v = twn.getValue();
+      pg.clear();
+      pg.lineStyle(6, color, 0.95);
+      pg.beginPath(); pg.moveTo(fromNode.x, fromNode.y);
+      const cx = fromNode.x + (toNode.x-fromNode.x)*v;
+      const cy = fromNode.y + (toNode.y-fromNode.y)*v;
+      pg.lineTo(cx, cy); pg.strokePath();
+      pg.lineStyle(2, 0xffffff, 0.15); pg.beginPath(); pg.moveTo(fromNode.x, fromNode.y); pg.lineTo(cx,cy); pg.strokePath();
+      // particulas de movimiento (pequeñas)
+      if(Math.random()<0.08){
+        const px = fromNode.x + (toNode.x-fromNode.x)*v;
+        const py = fromNode.y + (toNode.y-fromNode.y)*v;
+        const part = sceneRef.add.image(px,py,'dot').setScale(0.5).setTint(color).setDepth(8);
+        sceneRef.tweens.add({targets:part, alpha:0, scale:0.2, duration:400, onComplete: ()=>part.destroy()});
+      }
+    },
+    onComplete: ()=>{
+      pg.clear();
+      // actualizar nodo
+      player.node = target;
+      drawPlayers();
+      animInProgress = false;
+      if(onComplete) onComplete();
+    }
+  });
+}
+
+/* Comprobar meta al llegar */
+function checkMeta(player, target){
+  if(target === sceneRef.meta.id){
+    victory = true;
+    log(`${player.name} ha alcanzado la META! 🎉`);
+    playVictorySound();
+    launchFireworksAt( findNode(target).x, findNode(target).y );
+    // mostrar overlay simple
+    showVictoryOverlay(player);
+  }
+}
+
+/* Overlay y celebracion visuals */
+function showVictoryOverlay(player){
+  const w = config.width, h = config.height;
+  const overlay = sceneRef.add.rectangle(w/2, h/2, w, h, 0x000000, 0.45).setDepth(50);
+  const txt = sceneRef.add.text(w/2, h/2-10, `${player.name} ¡GANADOR!`, {font:'34px Arial', color:'#fff'}).setOrigin(0.5).setDepth(51);
+  const sub = sceneRef.add.text(w/2, h/2+28, 'Pulsa Reiniciar para jugar otra ronda', {font:'14px Arial', color:'#cfeff6'}).setOrigin(0.5).setDepth(51);
+}
+
+/* Fuegos artificiales con partículas */
+function launchFireworksAt(x,y){
+  // varios bursts
+  const colors = [0xff5c7a, 0x3ad6ff, 0xffd36b, 0x9b7bff, 0x5cff9b];
+  for(let i=0;i<7;i++){
+    sceneRef.time.delayedCall(i*350, ()=>{
+      const emit = sceneRef.fireworksParticles.createEmitter({
+        x: x + Phaser.Math.Between(-20,20),
+        y: y + Phaser.Math.Between(-20,20),
+        speed: {min: 100, max: 300},
+        angle: {min: 0, max: 360},
+        scale: {start: 1.0, end: 0},
+        lifespan: 1000,
+        gravityY: 100,
+        quantity: 18,
+        blendMode: 'ADD',
+        tint: colors[Phaser.Math.Between(0,colors.length-1)]
+      });
+      // explota y se apaga
+      sceneRef.time.delayedCall(600, ()=>{ emit.stop(); });
+    });
+  }
+}
+
+/* Sonido de victoria con WebAudio (sin archivo externo) */
+function playVictorySound(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // tres tonos ascendentes
+    const freqs = [440, 660, 880, 1100];
+    let t = 0;
+    freqs.forEach((f, idx)=>{
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.frequency.value = f;
+      o.type = 'sine';
+      o.connect(g); g.connect(ctx.destination);
+      g.gain.value = 0;
+      const now = ctx.currentTime + t;
+      g.gain.setValueAtTime(0, now);
+      g.gain.linearRampToValueAtTime(0.08, now + 0.02);
+      g.gain.linearRampToValueAtTime(0.0, now + 0.25);
+      o.start(now);
+      o.stop(now + 0.26);
+      t += 0.12;
+    });
+  }catch(e){
+    console.warn('AudioContext no disponible', e);
+  }
+}
+
+/* Utilidades: logging y reset */
+function log(msg){
+  const pre = document.getElementById('log');
+  const now = new Date().toLocaleTimeString();
+  pre.textContent += `\n[${now}] ${msg}`;
+  pre.scrollTop = pre.scrollHeight;
+}
+
+function resetGame(){
+  // reiniciar estado sin recargar escena completa
+  traces = [];
+  victory = false;
+  animInProgress = false;
+  // reestablecer players
+  players.p1.node = 'Lima'; players.p1.opened = 0; players.p1.prevNode = null;
+  players.p2.node = 'Tokyo'; players.p2.opened = 0; players.p2.prevNode = null;
+  turn = 'p1';
+  // aleatorizar gates
+  randomizeGates();
+  // limpiar overlays y labels
+  sceneRef.children.list.filter(c=> c._isLockLabel).forEach(c=>c.destroy());
+  // redibujar
+  sceneRef.edgeGraphics.clear(); sceneRef.traceGraphics.clear(); sceneRef.pathGraphics.clear();
+  drawEdges(); drawPlayers(); updateRoutesUI();
+  log('Juego reiniciado.');
+}
+
+function randomizeGates(){
+  const codes = ['if','run','git','bash','for','xor','map','push','rpc'];
+  edges.forEach(e=>{
+    e.blocked = Math.random() < 0.28;
+    e.code = e.blocked ? codes[Math.floor(Math.random()*codes.length)] : null;
+  });
+}
+
+/* Reinicio sencillo por restart de escena completa (si prefieres) */
+// function hardRestart(){ sceneRef.scene.restart(); }
+
+document.getElementById('cmd').addEventListener('keydown', e=>{
+  if(e.key === 'Tab'){ e.preventDefault(); doAutocomplete(); }
+});
+
+/* Autocompletado simple: sugiere cidades desde current node */
+function doAutocomplete(){
+  const current = turn==='p1' ? players.p1 : players.p2;
+  const poss = findEdgesFrom(current.node).map(r=>r.other);
+  const input = document.getElementById('cmd');
+  if(poss.length>0) input.value = 'move ' + poss[0];
+  input.focus();
+}
+
+/* Fine-tuning: permitir open <code> aunque no sea el turno (opcional). Mantengo que deba ser quien inició el gate */
+document.getElementById('send').addEventListener('click', ()=>{}); // ya enlazado
+
+/* Inicializar posiciones UI tras creación */
+window.addEventListener('load', ()=>{ /* nothing extra */ });
+
+</script>
+</body>
+</html>

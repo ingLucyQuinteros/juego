@@ -3,110 +3,160 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>HackRace — Phaser3 Mejorado</title>
+<title>HackRace — War of the Worlds</title>
 <style>
-  html,body{height:100%;margin:0;background:#071021;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;color:#dfe9f3}
-  #gameContainer{display:flex;justify-content:center;padding:8px}
-  #game{width:900px;height:600px;border-radius:8px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.6)}
-  #ui{width:900px;margin:8px auto;display:flex;gap:12px}
-  #terminal{flex:1;background:#051019;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.04)}
-  #terminal pre{background:#01050a;padding:10px;border-radius:6px;font-family:monospace;min-height:120px;max-height:220px;overflow:auto;color:#9be3ff}
-  #cmdRow{display:flex;gap:8px;margin-top:8px}
-  #cmd{flex:1;background:#02121a;border:1px solid rgba(255,255,255,0.04);padding:8px;border-radius:6px;color:#9be3ff;font-family:monospace}
-  #send{background:#0ea5a3;border:none;padding:8px 12px;border-radius:6px;color:#012020;font-weight:700}
-  #info{width:300px}
-  .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.04)}
-  .small{background:#1f2937;color:#fff;border:none;padding:6px 8px;border-radius:6px;cursor:pointer}
-  footer{max-width:900px;margin:8px auto;color:#9fb8c6;font-size:13px;text-align:center}
-  code{background:rgba(255,255,255,0.03);padding:2px 4px;border-radius:3px}
+  :root{
+    --bg:#071021; --panel:#051019; --ink:#dfe9f3; --ink2:#9fb8c6; --accent:#3ad6ff; --accent2:#ff5c7a;
+  }
+  html,body{height:100%;margin:0;background:var(--bg);font-family:system-ui,Segoe UI,Roboto,Arial;color:var(--ink)}
+  /* Layout dos columnas */
+  #wrap{max-width:1200px;margin:0 auto;padding:10px;display:grid;grid-template-columns: 320px 1fr;gap:12px}
+  /* Panel izquierdo (texto/UI) */
+  #left{
+    background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+    border:1px solid rgba(255,255,255,0.06);
+    border-radius:10px;padding:12px;
+  }
+  #timer{font-weight:800;color:var(--accent2);margin:4px 0 10px 0}
+  .muted{color:var(--ink2)}
+  #routes{margin:6px 0 10px 0}
+  #terminal pre{
+    background:#01050a; color:#9be3ff; border-radius:8px; padding:10px;
+    min-height:120px; max-height:220px; overflow:auto; margin:8px 0 6px 0; white-space:pre-wrap;
+  }
+  #cmdRow{display:flex; gap:8px}
+  #cmd{flex:1; background:#02121a; border:1px solid rgba(255,255,255,0.08); color:#9be3ff;
+       padding:8px 10px; border-radius:8px; font-family:monospace}
+  .btn{background:#0ea5a3;border:none;padding:8px 12px;border-radius:8px;color:#012020;font-weight:800;cursor:pointer}
+  .btn.secondary{background:#1f2937;color:#fff}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  hr{border:none;border-top:1px solid rgba(255,255,255,0.08);margin:10px 0}
+  /* Panel derecho (juego) */
+  #gameBox{
+    background:#021422; border-radius:10px; overflow:hidden; position:relative;
+    border:1px solid rgba(255,255,255,0.06); box-shadow:0 12px 40px rgba(0,0,0,0.35);
+    aspect-ratio: 3 / 2; /* 900x600 */
+    display:flex; align-items:center; justify-content:center;
+  }
+  #game{width:100%; height:100%;}
+  /* Responsive */
+  @media (max-width: 980px){
+    #wrap{grid-template-columns: 1fr}
+  }
 </style>
 </head>
 <body>
-  <div id="gameContainer"><div id="game"></div></div>
-  <div id="ui">
-    <div id="terminal">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div>Terminal — usa <code>move &lt;Ciudad&gt;</code>, <code>connect &lt;Ciudad&gt;</code>, <code>open &lt;code&gt;</code></div>
-        <div id="turnLabel">Turno: <strong>P1</strong></div>
-      </div>
-      <pre id="log">Iniciando HackRace... (pulsa T para enfocar la terminal)</pre>
-      <div id="cmdRow"><input id="cmd" placeholder="Ej. move Santiago" autocomplete="off" /><button id="send">Enviar</button></div>
+
+<div id="wrap">
+  <!-- Columna IZQUIERDA: Texto/UI -->
+  <div id="left">
+    <h2 style="margin:6px 0 0 0">HackRace — <span class="muted">War of the Worlds</span></h2>
+    <div id="timer">Tiempo restante: 2:30</div>
+
+    <div class="row">
+      <strong>Turno:</strong> <span id="turnLabel">P1</span>
+      <button class="btn secondary" id="musicBtn">▶︎ Música</button>
+      <button class="btn secondary" id="resetBtn">Reiniciar</button>
     </div>
 
-    <div id="info">
-      <div class="card">
-        <h3 style="margin-top:0">Jugadores</h3>
-        <p id="p1info">P1 - Pos: <span id="p1pos">-</span> | Abrió: <span id="p1opened">0</span></p>
-        <p id="p2info">P2 - Pos: <span id="p2pos">-</span> | Abrió: <span id="p2opened">0</span></p>
-        <hr style="border-color:rgba(255,255,255,0.03)"/>
-        <h4 style="margin:6px 0">Rutas disponibles</h4>
-        <p id="routes">--</p>
-        <div style="margin-top:10px;display:flex;gap:8px">
-          <button class="small" id="resetBtn">Reiniciar</button>
-          <button class="small" id="randomizeBtn">Aleatorizar gates</button>
-        </div>
+    <hr/>
+
+    <div>
+      <strong>Comandos</strong>
+      <div class="muted" id="p1cmd">• P1 (Atacante): <code>move &lt;Ciudad&gt;</code></div>
+      <div class="muted" id="p2cmd" style="display:none">• P2 (Defensor): <code>block &lt;Ciudad&gt;</code></div>
+    </div>
+
+    <div style="margin-top:10px">
+      <div><strong>Estado</strong></div>
+      <div class="muted">P1 Pos: <span id="p1pos">-</span> • P2 Pos: <span id="p2pos">-</span> • Bloqueos P2: <span id="p2blocked">0</span></div>
+    </div>
+
+    <div style="margin-top:10px">
+      <div><strong>Rutas disponibles</strong></div>
+      <div id="routes" class="muted">--</div>
+    </div>
+
+    <div id="terminal">
+      <div class="muted">Terminal (pulsa <strong>T</strong> para enfocar) — autocompletar con <strong>Tab</strong></div>
+      <pre id="log">Iniciando HackRace: War of the Worlds…</pre>
+      <div id="cmdRow">
+        <input id="cmd" placeholder="Ej. move Santiago" autocomplete="off"/>
+        <button class="btn" id="send">Enviar</button>
       </div>
     </div>
+
+    <div class="muted" style="font-size:12px">Consejo: P1 intenta llegar a <strong>CENTRAL</strong>; P2 bloquea estratégicamente rutas claves.</div>
   </div>
-  <footer>Phaser 3 — Prototipo mejorado con huellas y fuegos artificiales</footer>
+
+  <!-- Columna DERECHA: Juego -->
+  <div id="gameBox"><div id="game"></div></div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
 <script>
-/* ---------- CONFIG Y ESCENA ---------- */
-
+/* ------------------ Phaser Config ------------------ */
 const config = {
   type: Phaser.AUTO,
   parent: 'game',
   width: 900,
   height: 600,
   backgroundColor: '#071021',
- /* scale: {
-        mode: Phaser.Scale.FIT,
-        autoCenter: Phaser.Scale.CENTER_BOTH,
-        width: 800,
-        height: 600
-    },*/
+  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   scene: { preload, create, update }
 };
 const game = new Phaser.Game(config);
 
+/* ------------------ Estado global ------------------ */
 let sceneRef;
 let nodes = [];
 let edges = [];
-let traces = []; // huellas permanentes [{a,b,color}]
+let traces = [];
 let players = {};
 let turn = 'p1';
 let animInProgress = false;
 let victory = false;
+let timerEv = null;
+let timeLeft = 150; // 2:30
+let bgm;
 
-/* Preload: intenta cargar mapa, si falla usaremos fondo alternativo */
+/* ------------------ Preload ------------------ */
 function preload(){
-  // intenta cargar mapa local en assets/mapa.png (puedes reemplazar)
-  console.log('Cargando mapa...');
+  // Fondo opcional: mapa.png (si no existe se genera patrón)
   this.load.image('map', 'mapa.png');
+
+  // Música de fondo local — coloca musicFondo.mp3 junto a este HTML (o ajusta la ruta)
+  this.load.audio('bgm', 'assets/musicFondo.mp3');
+
+  // SFX
+  //this.load.audio('win', 'https://cdn.pixabay.com/download/audio/2022/03/15/audio_3a8a9937da.mp3?filename=success-1-6297.mp3');
+  //this.load.audio('lose', 'https://cdn.pixabay.com/download/audio/2022/03/15/audio_9dcbfffefb.mp3?filename=game-over-arcade-6435.mp3');
+
+  // Partícula para fuegos artificiales
+  const g = this.make.graphics({x:0,y:0,add:false});
+  g.fillStyle(0xffffff,1); g.fillCircle(6,6,6); g.generateTexture('dot',12,12); g.clear();
 }
 
+/* ------------------ Create ------------------ */
 function create(){
   sceneRef = this;
 
-  // Comprobar si la textura map está disponible al render
+  // Fondo (mapa si existe; si no, patrón)
   if(this.textures.exists('map')){
-    console.log('Mapa cargado correctamente.');
-    this.add.image(450,300,'map').setDisplaySize(900,600).setDepth(0);
+    const bg = this.add.image(450,300,'map').setDisplaySize(900,600).setDepth(0);
   } else {
-    // fondo de respaldo (gradiente simulado con rects)
-    console.warn('Mapa no encontrado, usando fondo alternativo.');
-    const g = this.add.graphics();
-    g.fillStyle(0x071021,1); g.fillRect(0,0,900,600);
-    for(let i=0;i<18;i++){ g.lineStyle(1,0x083246,0.03); g.strokeLineShape(new Phaser.Geom.Line(0,i*34,900,i*34)); }
+    const g = this.add.graphics().setDepth(0);
+    g.fillStyle(0x071021,1).fillRect(0,0,900,600);
+    for(let i=0;i<=600;i+=30){ g.lineStyle(1,0x0a2a3b,0.08).strokeLineShape(new Phaser.Geom.Line(0,i,900,i)); }
+    for(let i=0;i<=900;i+=40){ g.lineStyle(1,0x0a2a3b,0.06).strokeLineShape(new Phaser.Geom.Line(i,0,i,600)); }
   }
 
-  // Generar textura para partícula sencilla (círculo)
-  const pG = this.make.graphics({x:0,y:0,add:false});
-  pG.fillStyle(0xffffff,1); pG.fillCircle(6,6,6); pG.generateTexture('dot', 12,12);
-  pG.clear();
+  // Capas de dibujo
+  this.edgeGraphics  = this.add.graphics().setDepth(1); // rutas
+  this.traceGraphics = this.add.graphics().setDepth(2); // huellas P1
+  this.pathGraphics  = this.add.graphics().setDepth(6); // animación de movimiento
 
-  // Grafo ampliado (nodos y coordenadas)
+  // Nodos (derecha/izquierda ya definidos para mapa mundial estilizado)
   nodes = [
     {id:'Lima', x:140, y:360},
     {id:'Santiago', x:200, y:440},
@@ -128,369 +178,323 @@ function create(){
     {id:'Berlin2', x:570, y:190}
   ];
 
-  // Conexiones: algunas cortas, algunas largas; añadimos múltiples rutas alternativas
-  const connect = (a,b,blocked=false,code=null)=>{
-    const edge = {a,b,blocked,code,dist:distBetween(a,b)};
-    edges.push(edge);
-  };
-  function distBetween(a,b){
-    const A = nodes.find(n=>n.id===a), B = nodes.find(n=>n.id===b);
-    return Math.hypot(A.x-B.x, A.y-B.y);
-  }
+  // Conexiones (grafo con alternativas y trampas)
+  connect('Lima','Santiago'); connect('Lima','Mexico'); connect('Mexico','NY');
+  connect('NY','Toronto'); connect('Toronto','London'); connect('NY','London');
+  connect('London','Paris'); connect('Paris','Berlin'); connect('Berlin','Berlin2');
+  connect('Berlin2','Cairo'); connect('Paris','Madrid'); connect('Madrid','London');
+  connect('Cairo','Dubai'); connect('Dubai','Mumbai'); connect('Mumbai','Bangkok');
+  connect('Bangkok','Singapore'); connect('Singapore','Sydney'); connect('Bangkok','Tokyo');
+  connect('Tokyo','Sydney'); connect('CapeTown','Santiago'); connect('CapeTown','Lima');
+  connect('CapeTown','Cairo'); connect('Madrid','CapeTown'); connect('NY','Madrid');
+  connect('Mexico','Lima'); connect('Lima','CapeTown'); connect('London','Dubai'); connect('Madrid','Dubai');
 
-  // Base graph (con muchos atajos)
-  connect('Lima','Santiago'); connect('Lima','Mexico');
-  connect('Mexico','NY'); connect('NY','Toronto'); connect('Toronto','London');
-  connect('NY','London'); connect('London','Paris'); connect('Paris','Berlin');
-  connect('Berlin','Berlin2'); connect('Berlin2','Cairo'); connect('Paris','Madrid');
-  connect('Madrid','London'); connect('Cairo','Dubai'); connect('Dubai','Mumbai');
-  connect('Mumbai','Bangkok'); connect('Bangkok','Singapore'); connect('Singapore','Sydney');
-  connect('Bangkok','Tokyo'); connect('Tokyo','Sydney'); connect('CapeTown','Santiago');
-  connect('CapeTown','Lima'); connect('CapeTown','Cairo'); connect('Madrid','CapeTown');
-
-  // Añadimos atajos largos (posibles "engaños" que parecen cortos en hops, pero largos)
-  connect('NY','Madrid'); connect('Mexico','Lima'); connect('Lima','CapeTown');
-  connect('London','Dubai'); connect('Madrid','Dubai');
-
-  // Aleatorizar algunos gates (bloqueos)
-  const codes = ['if','run','git','bash','for','xor','map','push','rpc'];
-  edges.forEach(e=>{
-    if(Math.random() < 0.28){
-      e.blocked = true;
-      e.code = codes[Math.floor(Math.random()*codes.length)];
-    }
-  });
-
-  // Dibujar edges y nodos
-  this.edgeGraphics = this.add.graphics().setDepth(1);
-  this.traceGraphics = this.add.graphics().setDepth(2); // huellas permanentes
-  this.pathGraphics = this.add.graphics().setDepth(6); // animaciones temporales
+  // Dibuja rutas y nodos (una vez)
   drawEdges();
+  drawNodes();
 
-  // Dibujar nodos
-  nodes.forEach(n=>{
-    n.sprite = this.add.circle(n.x, n.y, 14, 0x082a36).setStrokeStyle(2, 0x9be3ff, 0.9).setDepth(3);
-    n.label = this.add.text(n.x, n.y-30, n.id, {font:'12px Arial', color:'#cfeff6'}).setOrigin(0.5).setDepth(3);
-  });
+  // Central (Sydney) resaltada
+  sceneRef.meta = { id:'Sydney' };
+  highlightCentral('Sydney');
 
-  // Jugadores y posiciones iniciales
-  players.p1 = {id:'p1', name:'P1', node:'Lima', color:0x3ad6ff, opened:0};
-  players.p2 = {id:'p2', name:'P2', node:'Tokyo', color:0xff7b5c, opened:0};
+  // Jugadores
+  players.p1 = { id:'p1', name:'P1 (Atacante)', node:'Lima', color:0x3ad6ff, blocked:0 };
+  players.p2 = { id:'p2', name:'P2 (Defensor)', node:'Sydney', color:0xff7b5c, blocked:0 };
   drawPlayers();
 
-  // Meta: elegir un nodo meta (por ejemplo, la posición inicial del rival)
-  const metaNodeId = 'Sydney';
-  const metaNode = nodes.find(n=>n.id===metaNodeId);
-  // mostrar área meta (halo)
-  sceneRef.meta = {id: metaNodeId};
-  sceneRef.add.circle(metaNode.x, metaNode.y, 28, 0xffffff, 0.04).setDepth(1);
-  sceneRef.add.text(metaNode.x, metaNode.y+36, 'META', {font:'12px Arial', color:'#ffd9a3'}).setOrigin(0.5).setDepth(3);
+  // Música de fondo (autoplay puede ser bloqueado; se inicia con botón/primer interacción)
+  bgm = this.sound.add('bgm', { loop:true, volume:0.45 });
 
-  // Crear emitter factory para fuegos artificiales (se usará al ganar)
-  sceneRef.fireworksParticles = this.add.particles('dot');
+  // Timer
+  startTimer();
 
   // UI handlers
-  document.getElementById('send').addEventListener('click', onCommand);
-  document.getElementById('cmd').addEventListener('keydown', e=>{ if(e.key==='Enter') onCommand(); });
-  document.getElementById('resetBtn').addEventListener('click', resetGame);
-  document.getElementById('randomizeBtn').addEventListener('click', ()=>{ randomizeGates(); drawEdges(); log('Gates aleatorizados'); });
+  byId('send').addEventListener('click', onCommand);
+  byId('cmd').addEventListener('keydown', e=>{ if(e.key==='Enter') onCommand(); if(e.key==='Tab'){ e.preventDefault(); doAutocomplete(); }});
+  byId('resetBtn').addEventListener('click', resetGame);
+  byId('musicBtn').addEventListener('click', toggleMusic);
+  window.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='t') byId('cmd').focus(); });
 
-  // focus shortcut
-  window.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='t') document.getElementById('cmd').focus(); });
-
+  // Primer estado UI
   updateRoutesUI();
-  log('Prototipo listo. Turno: P1');
+  log('Listo. P1 ataca, P2 defiende. Es turno de P1.');
 }
 
-/* Update: no heavy loops */
-function update(){}
+/* ------------------ Update (timer UI) ------------------ */
+function update(){
+  if(timeLeft>0 && !victory){
+    const m = Math.floor(timeLeft/60);
+    const s = Math.floor(timeLeft%60).toString().padStart(2,'0');
+    byId('timer').textContent = `Tiempo restante: ${m}:${s}`;
+  }
+}
 
-/* ---------- FUNCIONES PRINCIPALES ---------- */
+/* ------------------ Grafo helpers ------------------ */
+function connect(a,b){ edges.push({a,b,blocked:false}); }
+function findNode(id){ return nodes.find(n=>n.id===id); }
+function findEdgesFrom(id){ return edges.filter(e=> e.a===id || e.b===id).map(e=>({other:e.a===id?e.b:e.a, edge:e})); }
+function edgeOf(a,b){ return edges.find(e=> (e.a===a && e.b===b) || (e.a===b && e.b===a)); }
 
+/* ------------------ DIBUJO ------------------ */
 function drawEdges(){
   const g = sceneRef.edgeGraphics; g.clear();
-  // limpiar textos de locks antiguos
+  // Limpia candados antiguos
   sceneRef.children.list.filter(c=>c._isLockLabel).forEach(c=>c.destroy());
 
   edges.forEach(e=>{
-    const A = nodes.find(n=>n.id===e.a), B = nodes.find(n=>n.id===e.b);
+    const A = findNode(e.a), B = findNode(e.b);
     const color = e.blocked ? 0xffbf40 : 0x3ad6ff;
-    const alpha = e.blocked ? 0.22 : 0.42;
+    const alpha = e.blocked ? 0.24 : 0.42;
     g.lineStyle(4, color, alpha);
-    g.beginPath(); g.moveTo(A.x, A.y); g.lineTo(B.x,B.y); g.strokePath();
+    g.beginPath(); g.moveTo(A.x, A.y); g.lineTo(B.x, B.y); g.strokePath();
     if(e.blocked){
-      const mx=(A.x+B.x)/2, my=(A.y+B.y)/2;
-      const txt = sceneRef.add.text(mx, my, '🔒 '+e.code, {font:'12px Arial', color:'#ffd9a3'}).setOrigin(0.5).setDepth(5);
-      txt._isLockLabel = true;
+      const mx = (A.x+B.x)/2, my=(A.y+B.y)/2;
+      const lock = sceneRef.add.text(mx, my, '🔒', {font:'14px Arial', color:'#ffd9a3'}).setOrigin(0.5).setDepth(5);
+      lock._isLockLabel = true;
     }
   });
-
-  // volver a dibujar huellas
   redrawTraces();
 }
 
+function drawNodes(){
+  // Crea círculos + etiquetas una vez
+  nodes.forEach(n=>{
+    n.dot && n.dot.destroy();
+    n.label && n.label.destroy();
+    n.dot = sceneRef.add.circle(n.x, n.y, 14, 0x082a36).setStrokeStyle(2, 0x9be3ff, 0.9).setDepth(3);
+    n.label = sceneRef.add.text(n.x, n.y-28, n.id, {font:'12px Arial', color:'#cfeff6'}).setOrigin(0.5).setDepth(3);
+  });
+}
+
+function highlightCentral(id){
+  const c = findNode(id);
+  sceneRef.add.circle(c.x,c.y,28,0xff0000,0.28).setDepth(1);
+  sceneRef.add.star(c.x,c.y,8,20,10,0xff0000,0.85).setDepth(3);
+  sceneRef.add.text(c.x,c.y+34,'CENTRAL',{font:'16px Arial', color:'#ff5c7a'}).setOrigin(0.5).setDepth(3);
+}
+
 function redrawTraces(){
-  sceneRef.traceGraphics.clear();
+  const g = sceneRef.traceGraphics; g.clear();
   traces.forEach(t=>{
-    const A = nodes.find(n=>n.id===t.a), B = nodes.find(n=>n.id===t.b);
-    sceneRef.traceGraphics.lineStyle(6, t.color, 0.9);
-    sceneRef.traceGraphics.beginPath(); sceneRef.traceGraphics.moveTo(A.x,A.y); sceneRef.traceGraphics.lineTo(B.x,B.y); sceneRef.traceGraphics.strokePath();
-    sceneRef.traceGraphics.lineStyle(2, 0xffffff, 0.12);
-    sceneRef.traceGraphics.beginPath(); sceneRef.traceGraphics.moveTo(A.x,A.y); sceneRef.traceGraphics.lineTo(B.x,B.y); sceneRef.traceGraphics.strokePath();
+    const A = findNode(t.a), B = findNode(t.b);
+    g.lineStyle(6, t.color, 0.95);
+    g.beginPath(); g.moveTo(A.x,A.y); g.lineTo(B.x,B.y); g.strokePath();
+    g.lineStyle(2, 0xffffff, 0.14);
+    g.beginPath(); g.moveTo(A.x,A.y); g.lineTo(B.x,B.y); g.strokePath();
   });
 }
 
 function drawPlayers(){
+  // Limpia sprites previos
   if(sceneRef.p1Sprite) sceneRef.p1Sprite.destroy();
   if(sceneRef.p2Sprite) sceneRef.p2Sprite.destroy();
-  const n1 = nodes.find(n=>n.id===players.p1.node), n2 = nodes.find(n=>n.id===players.p2.node);
-  sceneRef.p1Sprite = sceneRef.add.circle(n1.x, n1.y, 10, players.p1.color).setDepth(7).setStrokeStyle(2,0x002b36,1);
-  sceneRef.p2Sprite = sceneRef.add.circle(n2.x, n2.y, 10, players.p2.color).setDepth(7).setStrokeStyle(2,0x2b0200,1);
-  document.getElementById('p1pos').textContent = players.p1.node;
-  document.getElementById('p2pos').textContent = players.p2.node;
-  document.getElementById('p1opened').textContent = players.p1.opened;
-  document.getElementById('p2opened').textContent = players.p2.opened;
+
+  const n1 = findNode(players.p1.node);
+  const n2 = findNode(players.p2.node);
+
+  sceneRef.p1Sprite = sceneRef.add.circle(n1.x, n1.y, 10, players.p1.color).setStrokeStyle(2,0x002b36,1).setDepth(7);
+  sceneRef.p2Sprite = sceneRef.add.circle(n2.x, n2.y, 10, players.p2.color).setStrokeStyle(2,0x2b0200,1).setDepth(7);
+
+  byId('p1pos').textContent = players.p1.node;
+  byId('p2pos').textContent = players.p2.node;
+  byId('p2blocked').textContent = players.p2.blocked || 0;
 }
 
-function findNode(id){ return nodes.find(n=>n.id===id); }
-function findEdgesFrom(id){ return edges.filter(e=> e.a===id || e.b===id).map(e=>({other: e.a===id? e.b: e.a, edge:e})); }
-
-function updateRoutesUI(){
-  const current = turn === 'p1' ? players.p1 : players.p2;
-  document.getElementById('turnLabel').innerHTML = `Turno: <strong>${turn.toUpperCase()}</strong>`;
-  const routes = findEdgesFrom(current.node);
-  const out = routes.map(r=>`${r.other}${r.edge.blocked? ' (GATE:'+r.edge.code+')':''}`).join('  |  ');
-  document.getElementById('routes').textContent = out || '--';
-  log(`${current.name} desde ${current.node}. Rutas: ${out}`);
+/* ------------------ Timer ------------------ */
+function startTimer(){
+  if(timerEv) timerEv.remove();
+  timeLeft = 150; victory = false;
+  timerEv = sceneRef.time.addEvent({
+    delay: 1000, loop:true,
+    callback: ()=>{
+      timeLeft--;
+      if(timeLeft<=0 && !victory){
+        victory = true;
+        log('¡Tiempo agotado! P2 (Defensor) gana como mejor bloqueador 🎉');
+        //playLoseSound();
+        launchFireworksAt(findNode(players.p2.node).x, findNode(players.p2.node).y);
+        showVictoryOverlay(players.p2,'P2 gana: ¡Mejor bloqueador!');
+      }
+    }
+  });
 }
 
-/* Comandos: move/connect/open */
+/* ------------------ Comandos ------------------ */
 function onCommand(){
   if(animInProgress || victory) return log('Operación no permitida ahora.');
-  const raw = document.getElementById('cmd').value.trim();
+  const raw = byId('cmd').value.trim();
   if(!raw) return;
-  document.getElementById('cmd').value = '';
-  const parts = raw.split(/\s+/);
-  const verb = parts[0].toLowerCase();
-  const arg = parts.slice(1).join(' ');
+  byId('cmd').value = '';
+  const [verb, ...rest] = raw.split(/\s+/);
+  const arg = rest.join(' ');
   const current = turn==='p1' ? players.p1 : players.p2;
 
-  if(verb === 'move' || verb === 'connect'){
+  if(turn==='p1' && verb?.toLowerCase()==='move'){
     if(!arg) return log('Indica destino: move <Ciudad>');
     const target = arg;
-    const possible = findEdgesFrom(current.node).map(r=>r.other);
-    if(!possible.includes(target)) return log('Destino no disponible desde tu nodo actual.');
-    const edge = edges.find(e=> (e.a===current.node && e.b===target) || (e.b===current.node && e.a===target));
-    if(edge.blocked){
-      // requiere abrir
-      log(`Ruta bloqueada (gate ${edge.code}). Escribe: open ${edge.code}`);
-      current.awaitingGate = edge;
-      return;
-    }
-    // mover y dejar huella permanente (traza)
+    const options = findEdgesFrom(current.node).map(r=>r.other);
+    if(!options.includes(target)) return log('Destino no disponible desde tu nodo actual.');
+    const ed = edgeOf(current.node, target);
+    if(ed.blocked) return log('Ruta bloqueada. P2 protegió esta conexión.');
+    // animar y dejar huella
     animateMove(current, target, ()=>{
-      // guardar traza (marca permanente)
-      traces.push({a: current.prevNode || current.node, b: target, color: current.color || (current===players.p1?0x3ad6ff:0xff7b5c)});
+      traces.push({a: current.node, b: target, color: current.color});
       redrawTraces();
-      current.prevNode = target;
+      current.node = target;
       drawPlayers();
-      checkMeta(current, target);
-      // cambiar turno si no hay victoria
-      if(!victory){ turn = (turn==='p1')? 'p2':'p1'; updateRoutesUI(); }
+      checkCentralReached(current, target);
+      if(!victory){ turn='p2'; updateRoutesUI(); }
     });
-  } else if(verb === 'open'){
-    const code = arg;
-    const curr = turn==='p1' ? players.p1 : players.p2;
-    if(!curr.awaitingGate) return log('No estás intentando abrir ninguna puerta.');
-    if(curr.awaitingGate.code === code){
-      curr.awaitingGate.blocked = false;
-      curr.opened = (curr.opened||0)+1;
-      log(`${curr.name} abrió la puerta ${code} ✅`);
-      // añadir huella ligera visual en el edge abierto (opcional)
-      traces.push({a: curr.awaitingGate.a, b: curr.awaitingGate.b, color: 0x9be3ff});
-      redrawTraces(); drawEdges(); drawPlayers();
-      delete curr.awaitingGate;
-      // no cambies turno automáticamente; jugador puede mover ahora
-      updateRoutesUI();
-    } else {
-      log('Código incorrecto — pierdes el turno');
-      delete curr.awaitingGate;
-      // perder turno
-      turn = (turn==='p1')? 'p2':'p1';
-      updateRoutesUI();
-    }
+
+  } else if(turn==='p2' && verb?.toLowerCase()==='block'){
+    if(!arg) return log('Indica nodo a bloquear: block <Ciudad>');
+    const target = arg;
+    const options = findEdgesFrom(current.node).map(r=>r.other);
+    if(!options.includes(target)) return log('No puedes bloquear ese nodo desde tu posición.');
+    const ed = edgeOf(current.node, target);
+    if(ed.blocked) return log('Esa ruta ya está bloqueada.');
+    ed.blocked = true;
+    players.p2.blocked = (players.p2.blocked || 0) + 1;
+    drawEdges();
+    log(`P2 bloqueó la ruta a ${target} 🔒`);
+    turn = 'p1'; updateRoutesUI();
+
   } else {
-    log('Comando desconocido. Usa: move <Ciudad>, connect <Ciudad>, open <code>');
+    log(`Comando inválido para ${current.name}. Usa: ${turn==='p1' ? 'move <Ciudad>' : 'block <Ciudad>'}`);
   }
 }
 
-/* Animación de movimiento: línea neon; luego actualiza posición */
 function animateMove(player, target, onComplete){
   animInProgress = true;
-  const fromNode = findNode(player.node);
-  const toNode = findNode(target);
+  const from = findNode(player.node), to = findNode(target);
   const pg = sceneRef.pathGraphics; pg.clear();
 
-  // línea animada con tween
-  const color = player===players.p1 ? 0x3ad6ff : 0xff7b5c;
   sceneRef.tweens.addCounter({
     from:0, to:1, duration:900, ease:'Cubic.easeInOut',
-    onUpdate: twn=>{
-      const v = twn.getValue();
+    onUpdate: t=>{
+      const v=t.getValue();
       pg.clear();
-      pg.lineStyle(6, color, 0.95);
-      pg.beginPath(); pg.moveTo(fromNode.x, fromNode.y);
-      const cx = fromNode.x + (toNode.x-fromNode.x)*v;
-      const cy = fromNode.y + (toNode.y-fromNode.y)*v;
-      pg.lineTo(cx, cy); pg.strokePath();
-      pg.lineStyle(2, 0xffffff, 0.15); pg.beginPath(); pg.moveTo(fromNode.x, fromNode.y); pg.lineTo(cx,cy); pg.strokePath();
-      // particulas de movimiento (pequeñas)
+      pg.lineStyle(6, player.color, 0.95);
+      pg.beginPath(); pg.moveTo(from.x,from.y);
+      const cx = Phaser.Math.Interpolation.Linear([from.x,to.x], v);
+      const cy = Phaser.Math.Interpolation.Linear([from.y,to.y], v);
+      pg.lineTo(cx,cy); pg.strokePath();
+      pg.lineStyle(2, 0xffffff, 0.14);
+      pg.beginPath(); pg.moveTo(from.x,from.y); pg.lineTo(cx,cy); pg.strokePath();
+
       if(Math.random()<0.08){
-        const px = fromNode.x + (toNode.x-fromNode.x)*v;
-        const py = fromNode.y + (toNode.y-fromNode.y)*v;
-        const part = sceneRef.add.image(px,py,'dot').setScale(0.5).setTint(color).setDepth(8);
-        sceneRef.tweens.add({targets:part, alpha:0, scale:0.2, duration:400, onComplete: ()=>part.destroy()});
+        const spark = sceneRef.add.image(cx,cy,'dot').setTint(player.color).setScale(0.6).setDepth(8);
+        sceneRef.tweens.add({targets:spark, alpha:0, scale:0.2, duration:360, onComplete:()=>spark.destroy()});
       }
     },
     onComplete: ()=>{
       pg.clear();
-      // actualizar nodo
-      player.node = target;
-      drawPlayers();
-      animInProgress = false;
-      if(onComplete) onComplete();
+      animInProgress=false;
+      onComplete && onComplete();
     }
   });
 }
 
-/* Comprobar meta al llegar */
-function checkMeta(player, target){
-  if(target === sceneRef.meta.id){
+/* ------------------ Meta / Victoria ------------------ */
+function checkCentralReached(player, nodeId){
+  if(nodeId===sceneRef.meta.id && player.id==='p1'){
     victory = true;
-    log(`${player.name} ha alcanzado la META! 🎉`);
-    playVictorySound();
-    launchFireworksAt( findNode(target).x, findNode(target).y );
-    // mostrar overlay simple
-    showVictoryOverlay(player);
+    log('¡P1 ha invadido la CENTRAL! 🎉');
+    //playWinSound();
+    const c = findNode(nodeId);
+    launchFireworksAt(c.x,c.y);
+    showVictoryOverlay(player,'P1 gana: ¡Invasión exitosa!');
+    timerEv?.remove();
   }
 }
 
-/* Overlay y celebracion visuals */
-function showVictoryOverlay(player){
-  const w = config.width, h = config.height;
-  const overlay = sceneRef.add.rectangle(w/2, h/2, w, h, 0x000000, 0.45).setDepth(50);
-  const txt = sceneRef.add.text(w/2, h/2-10, `${player.name} ¡GANADOR!`, {font:'34px Arial', color:'#fff'}).setOrigin(0.5).setDepth(51);
-  const sub = sceneRef.add.text(w/2, h/2+28, 'Pulsa Reiniciar para jugar otra ronda', {font:'14px Arial', color:'#cfeff6'}).setOrigin(0.5).setDepth(51);
+function showVictoryOverlay(player, message){
+  const w=config.width,h=config.height;
+  const layer = sceneRef.add.rectangle(w/2,h/2,w,h,0x000000,0.45).setDepth(50);
+  sceneRef.add.text(w/2,h/2-8,message,{font:'32px Arial',color:'#fff'}).setOrigin(0.5).setDepth(51);
+  sceneRef.add.text(w/2,h/2+24,'Pulsa Reiniciar para jugar otra ronda',{font:'14px Arial',color:'#cfeff6'}).setOrigin(0.5).setDepth(51);
 }
 
-/* Fuegos artificiales con partículas */
+/* ------------------ Fuegos artificiales ------------------ */
 function launchFireworksAt(x,y){
-  // varios bursts
-  const colors = [0xff5c7a, 0x3ad6ff, 0xffd36b, 0x9b7bff, 0x5cff9b];
+  const colors=[0xff5c7a,0x3ad6ff,0xffd36b,0x9b7bff,0x5cff9b];
+  const parts = sceneRef.add.particles('dot');
   for(let i=0;i<7;i++){
-    sceneRef.time.delayedCall(i*350, ()=>{
-      const emit = sceneRef.fireworksParticles.createEmitter({
+    sceneRef.time.delayedCall(i*320, ()=>{
+      const em = parts.createEmitter({
         x: x + Phaser.Math.Between(-20,20),
         y: y + Phaser.Math.Between(-20,20),
-        speed: {min: 100, max: 300},
-        angle: {min: 0, max: 360},
-        scale: {start: 1.0, end: 0},
-        lifespan: 1000,
-        gravityY: 100,
-        quantity: 18,
-        blendMode: 'ADD',
+        speed:{min:120,max:320},
+        angle:{min:0,max:360},
+        scale:{start:1,end:0},
+        lifespan:1000,
+        gravityY:120,
+        quantity:18,
+        blendMode:'ADD',
         tint: colors[Phaser.Math.Between(0,colors.length-1)]
       });
-      // explota y se apaga
-      sceneRef.time.delayedCall(600, ()=>{ emit.stop(); });
+      sceneRef.time.delayedCall(650, ()=> em.stop());
     });
   }
+  sceneRef.time.delayedCall(3000, ()=> parts.destroy());
 }
 
-/* Sonido de victoria con WebAudio (sin archivo externo) */
-function playVictorySound(){
+/* ------------------ Sonido ------------------ */
+function toggleMusic(){
   try{
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    // tres tonos ascendentes
-    const freqs = [440, 660, 880, 1100];
-    let t = 0;
-    freqs.forEach((f, idx)=>{
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.frequency.value = f;
-      o.type = 'sine';
-      o.connect(g); g.connect(ctx.destination);
-      g.gain.value = 0;
-      const now = ctx.currentTime + t;
-      g.gain.setValueAtTime(0, now);
-      g.gain.linearRampToValueAtTime(0.08, now + 0.02);
-      g.gain.linearRampToValueAtTime(0.0, now + 0.25);
-      o.start(now);
-      o.stop(now + 0.26);
-      t += 0.12;
-    });
+    console.log("se pudo reproducir music");
+    if(!bgm.isPlaying){ bgm.play(); byId('musicBtn').textContent='⏸︎ Música'; }
+    else { bgm.pause(); byId('musicBtn').textContent='▶︎ Música'; }
   }catch(e){
-    console.warn('AudioContext no disponible', e);
+    console.log("no se puedo reproducir la music");
+    log('No se pudo iniciar la música. Asegúrate de tener musicFondo.mp3 junto a este archivo.');
   }
 }
+//function playWinSound(){ sceneRef.sound.play('win'); }
+//function playLoseSound(){ sceneRef.sound.play('lose'); }
 
-/* Utilidades: logging y reset */
-function log(msg){
-  const pre = document.getElementById('log');
-  const now = new Date().toLocaleTimeString();
-  pre.textContent += `\n[${now}] ${msg}`;
-  pre.scrollTop = pre.scrollHeight;
+/* ------------------ UI helpers ------------------ */
+function updateRoutesUI(){
+  byId('turnLabel').textContent = turn.toUpperCase();
+  byId('p1cmd').style.display = (turn==='p1')?'block':'none';
+  byId('p2cmd').style.display = (turn==='p2')?'block':'none';
+  const current = (turn==='p1')?players.p1:players.p2;
+  const r = findEdgesFrom(current.node);
+  const text = r.map(x=>`${x.other}${x.edge.blocked?' (BLOQUEADO)':''}`).join('  |  ') || '--';
+  byId('routes').textContent = text;
+  log(`${(turn==='p1'?'P1':'P2')} desde ${current.node}. Rutas: ${text}`);
 }
 
 function resetGame(){
-  // reiniciar estado sin recargar escena completa
   traces = [];
   victory = false;
   animInProgress = false;
-  // reestablecer players
-  players.p1.node = 'Lima'; players.p1.opened = 0; players.p1.prevNode = null;
-  players.p2.node = 'Tokyo'; players.p2.opened = 0; players.p2.prevNode = null;
-  turn = 'p1';
-  // aleatorizar gates
-  randomizeGates();
-  // limpiar overlays y labels
-  sceneRef.children.list.filter(c=> c._isLockLabel).forEach(c=>c.destroy());
-  // redibujar
+  turn='p1';
+  players.p1.node='Lima'; players.p1.blocked=0;
+  players.p2.node='Sydney'; players.p2.blocked=0;
+  edges.forEach(e=> e.blocked=false);
+  sceneRef.children.list.filter(c=>c._isLockLabel).forEach(c=>c.destroy());
   sceneRef.edgeGraphics.clear(); sceneRef.traceGraphics.clear(); sceneRef.pathGraphics.clear();
-  drawEdges(); drawPlayers(); updateRoutesUI();
+  drawEdges(); drawNodes(); drawPlayers(); updateRoutesUI();
+  startTimer();
   log('Juego reiniciado.');
 }
 
-function randomizeGates(){
-  const codes = ['if','run','git','bash','for','xor','map','push','rpc'];
-  edges.forEach(e=>{
-    e.blocked = Math.random() < 0.28;
-    e.code = e.blocked ? codes[Math.floor(Math.random()*codes.length)] : null;
-  });
-}
-
-/* Reinicio sencillo por restart de escena completa (si prefieres) */
-// function hardRestart(){ sceneRef.scene.restart(); }
-
-document.getElementById('cmd').addEventListener('keydown', e=>{
-  if(e.key === 'Tab'){ e.preventDefault(); doAutocomplete(); }
-});
-
-/* Autocompletado simple: sugiere cidades desde current node */
+/* Autocompletar con Tab: sugiere primer destino posible del turno actual */
 function doAutocomplete(){
-  const current = turn==='p1' ? players.p1 : players.p2;
-  const poss = findEdgesFrom(current.node).map(r=>r.other);
-  const input = document.getElementById('cmd');
-  if(poss.length>0) input.value = 'move ' + poss[0];
-  input.focus();
+  const current = (turn==='p1')?players.p1:players.p2;
+  const poss = findEdgesFrom(current.node).map(r=>r.other).filter(o=>!edgeOf(current.node,o)?.blocked || turn==='p2');
+  if(poss.length===0) return;
+  byId('cmd').value = (turn==='p1'?'move ':'block ')+poss[0];
+  byId('cmd').focus();
 }
 
-/* Fine-tuning: permitir open <code> aunque no sea el turno (opcional). Mantengo que deba ser quien inició el gate */
-document.getElementById('send').addEventListener('click', ()=>{}); // ya enlazado
-
-/* Inicializar posiciones UI tras creación */
-window.addEventListener('load', ()=>{ /* nothing extra */ });
-
+/* ------------------ Util ------------------ */
+function byId(id){ return document.getElementById(id); }
+function log(msg){
+  const pre=byId('log'); const now=new Date().toLocaleTimeString();
+  pre.textContent += `\n[${now}] ${msg}`; pre.scrollTop=pre.scrollHeight;
+}
 </script>
 </body>
 </html>
